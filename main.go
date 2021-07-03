@@ -1,13 +1,12 @@
 package main
 
-import (
-	"fmt"
-)
+import "fmt"
 
 func main() {
-	pos := LoadInitialPosition("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
-	fmt.Println(pos.board)
-
-	s := Square(52)
-	fmt.Println(s)
+	pos := LoadInitialPosition("nbqrknbr/pppppppp/8/8/8/8/PPPPPPPP/NBQRKNBR w KQkq - 0 1")
+	tree := MoveTree{
+		position: pos,
+	}
+	fmt.Println(tree.FindMoves(4))
+	//fmt.Println(tree)
 }

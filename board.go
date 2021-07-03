@@ -11,7 +11,8 @@ type Rank byte
 type Board [64]Piece
 
 const (
-	Pawn PieceType = iota
+	NoPieceType PieceType = iota
+	Pawn
 	Knight
 	Bishop
 	Rook
@@ -20,46 +21,62 @@ const (
 )
 
 const (
-	White PieceColour = true
-	Black             = false
+	White PieceColour = false
+	Black             = true
 )
 
+const NoPiece = Piece(0)
 const NoSquare = Square(64)
 
+var Squares = [64]Square{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63}
+
 var fenPieces = map[rune]Piece{
-	'P': 10,
-	'N': 11,
-	'B': 12,
-	'R': 13,
-	'Q': 14,
-	'K': 15,
-	'p': 20,
-	'n': 21,
-	'b': 22,
-	'r': 23,
-	'q': 24,
-	'k': 25,
+	'P': CreatePiece(White, Pawn),
+	'N': CreatePiece(White, Knight),
+	'B': CreatePiece(White, Bishop),
+	'R': CreatePiece(White, Rook),
+	'Q': CreatePiece(White, Queen),
+	'K': CreatePiece(White, King),
+	'p': CreatePiece(Black, Pawn),
+	'n': CreatePiece(Black, Knight),
+	'b': CreatePiece(Black, Bishop),
+	'r': CreatePiece(Black, Rook),
+	'q': CreatePiece(Black, Queen),
+	'k': CreatePiece(Black, King),
 }
 
 var pieceSymbols = map[Piece]string{
-	10: "♙",
-	11: "♘",
-	12: "♗",
-	13: "♖",
-	14: "♕",
-	15: "♔",
-	20: "♟︎",
-	21: "♞",
-	22: "♝",
-	23: "♜",
-	24: "♛",
-	25: "♚",
+	CreatePiece(White, Pawn):   "♙",
+	CreatePiece(White, Knight): "♘",
+	CreatePiece(White, Bishop): "♗",
+	CreatePiece(White, Rook):   "♖",
+	CreatePiece(White, Queen):  "♕",
+	CreatePiece(White, King):   "♔",
+	CreatePiece(Black, Pawn):   "♟︎",
+	CreatePiece(Black, Knight): "♞",
+	CreatePiece(Black, Bishop): "♝",
+	CreatePiece(Black, Rook):   "♜",
+	CreatePiece(Black, Queen):  "♛",
+	CreatePiece(Black, King):   "♚",
+}
+
+func CreatePiece(pc PieceColour, pt PieceType) Piece {
+	if pc == White {
+		return Piece(10 + int(pt))
+	}
+	return Piece(20 + int(pt))
 }
 
 func (p Piece) Type() PieceType {
+	if p == NoPiece {
+		panic("No piece")
+	}
 	return PieceType(p % 10)
 }
 func (p Piece) Colour() PieceColour {
+	if p == NoPiece {
+		panic("No piece")
+	}
 	return PieceColour((p/10)%2 == 0)
 }
 func (p Piece) Value() int {
@@ -104,21 +121,28 @@ func (pc PieceColour) String() string {
 		return "black"
 	}
 }
+func (p Piece) String() string {
+	return pieceSymbols[p]
+}
 
 func (b Board) String() string {
 	str := ""
-	for i, tile := range b {
-		if i%8 == 0 {
+	for i, piece := range b {
+		if i > 0 && i%8 == 0 {
 			str += "\n"
 		}
-		if tile == 0 {
+		if piece == NoPiece {
 			str += " "
 			continue
 		} else {
-			str += pieceSymbols[tile]
+			str += pieceSymbols[piece]
 		}
 	}
 	return str
+}
+
+func ToSquare(f File, r Rank) Square {
+	return Square((7-byte(r))*8 + byte(f))
 }
 
 func (s Square) File() File {
@@ -135,4 +159,11 @@ func (r Rank) String() string {
 }
 func (s Square) String() string {
 	return s.File().String() + s.Rank().String()
+}
+
+func (pc PieceColour) Flip() PieceColour {
+	if pc == White {
+		return Black
+	}
+	return White
 }
