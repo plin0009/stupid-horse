@@ -33,7 +33,9 @@ type MoveTree struct {
 	children []*MoveTree
 	move     Move
 	position Position
-	valid    bool
+	legal    bool
+	depth    int
+	eval     int
 }
 type Movement [2]int
 type PawnInfo struct {
@@ -89,6 +91,8 @@ func LoadInitialPosition(fen string) Position {
 
 func (m Move) String() string {
 	switch true {
+	case m.piece == NoPiece:
+		panic("No move")
 	case m.castleInfo.castling:
 		if m.to.File() == File(2) {
 			return "O-O-O"
@@ -184,191 +188,204 @@ func (mt MoveTree) OutputTree(indent int) string {
 }
 
 func (mt *MoveTree) FindMoves(depth int) int {
+	// if searched before
+	if mt.legal {
+		if depth == 0 {
+			return 1
+		}
+		nodes := 0
+		for _, child := range mt.children {
+			nodes += child.FindMoves(depth - 1)
+		}
+		return nodes
+	}
 	p := mt.position
-	x := 0
+	nodes := 0
 	var moves []Move
 	for _, square := range Squares {
 		piece := p.board[square]
-		if piece == NoPiece {
+		if piece == NoPiece || piece.Colour() != p.turn {
 			continue
 		}
-		if piece.Colour() == p.turn {
-			switch piece.Type() {
-			case Bishop, Rook, Queen, Knight, King: // regular movements
-				for _, m := range pieceMovements[piece.Type()] {
-					curSquare := square
-					for ok := true; ok; ok = (piece.Type() != Knight && piece.Type() != King) {
-						newSquare, err := curSquare.Move(m)
-						if err != nil {
-							break
-						}
-						curSquare = newSquare
-						if mt.move.castleInfo.castling {
-							for _, kingSquare := range mt.move.castleInfo.betweenSquares {
-								if kingSquare == curSquare {
-									mt.valid = false
-									return 0
-								}
-							}
-						}
-						pieceAt := p.board[curSquare]
-						if pieceAt == NoPiece {
-							moves = append(moves, Move{
-								piece: piece, from: square, to: curSquare,
-							})
-							continue
-						} else if pieceAt.Colour() == p.turn {
-							break
-						} else {
-							if pieceAt.Type() == King {
-								mt.valid = false
+		pieceType := piece.Type()
+		switch pieceType {
+		case Bishop, Rook, Queen, Knight, King: // regular movements
+			for _, m := range pieceMovements[pieceType] {
+				curSquare := square
+				for ok := true; ok; ok = (pieceType != Knight && pieceType != King) {
+					newSquare, err := curSquare.Move(m)
+					if err != nil {
+						break
+					}
+					curSquare = newSquare
+					if mt.move.castleInfo.castling {
+						for _, kingSquare := range mt.move.castleInfo.betweenSquares {
+							if kingSquare == curSquare {
+								mt.legal = false
 								return 0
 							}
+						}
+					}
+					pieceAt := p.board[curSquare]
+					if pieceAt == NoPiece {
+						moves = append(moves, Move{
+							piece: piece, from: square, to: curSquare,
+						})
+						continue
+					} else if pieceAt.Colour() != p.turn {
+						if pieceAt.Type() == King {
+							mt.legal = false
+							return 0
+						}
+						moves = append(moves, Move{
+							piece: piece, from: square, to: curSquare, capture: true,
+						})
+					}
+					break
+				}
+			}
+		case Pawn:
+			pi := pawnInfo[p.turn]
+			// one square forward
+			oneSquare, err := square.Move(Movement{0, pi.forward})
+			if err != nil {
+				panic("Pawn can somehow step forward off the board")
+			}
+			if p.board[oneSquare] == NoPiece {
+				// promotion
+				if oneSquare.Rank() == pi.promotionRank {
+					for _, promotionPieceType := range []PieceType{Queen, Rook, Bishop, Knight} {
+						moves = append(moves, Move{
+							piece: piece, from: square, to: oneSquare, promote: promotionPieceType,
+						})
+					}
+				} else {
+					moves = append(moves, Move{
+						piece: piece, from: square, to: oneSquare,
+					})
+					// two squares forward
+					if square.Rank() == pi.homeRank {
+						twoSquare, err := square.Move(Movement{0, pi.forward * 2})
+						if err != nil {
+							panic("Pawn can somehow step forward off the board")
+						}
+						if p.board[twoSquare] == NoPiece {
 							moves = append(moves, Move{
-								piece: piece, from: square, to: curSquare, capture: true,
+								piece: piece, from: square, to: twoSquare,
 							})
-							break
 						}
 					}
 				}
-			case Pawn:
-				pi := pawnInfo[p.turn]
-				// one square forward
-				oneSquare, err := square.Move(Movement{0, pi.forward})
+			}
+			// capture
+			for _, m := range []Movement{Movement{-1, pi.forward}, Movement{1, pi.forward}} {
+				captureSquare, err := square.Move(m)
 				if err != nil {
-					panic("Pawn can somehow step forward off the board")
+					continue
 				}
-				if p.board[oneSquare] == NoPiece {
+				if mt.move.castleInfo.castling {
+					for _, kingSquare := range mt.move.castleInfo.betweenSquares {
+						if kingSquare == captureSquare {
+							mt.legal = false
+							return 0
+						}
+					}
+				}
+				pieceAt := p.board[captureSquare]
+				if pieceAt == NoPiece {
+					// en passant
+					if captureSquare == p.enPassantSquare {
+						moves = append(moves, Move{
+							piece: piece, from: square, to: captureSquare, capture: true, enPassant: true,
+						})
+					}
+					continue
+				}
+				if pieceAt.Colour() != p.turn {
+					if pieceAt.Type() == King {
+						mt.legal = false
+						return 0
+					}
 					// promotion
-					if oneSquare.Rank() == pi.promotionRank {
+					if captureSquare.Rank() == pi.promotionRank {
 						for _, promotionPieceType := range []PieceType{Queen, Rook, Bishop, Knight} {
 							moves = append(moves, Move{
-								piece: piece, from: square, to: oneSquare, promote: promotionPieceType,
+								piece: piece, from: square, to: captureSquare, capture: true, promote: promotionPieceType,
 							})
 						}
 					} else {
 						moves = append(moves, Move{
-							piece: piece, from: square, to: oneSquare,
-						})
-						// two squares forward
-						if square.Rank() == pi.homeRank {
-							twoSquare, err := square.Move(Movement{0, pi.forward * 2})
-							if err != nil {
-								panic("Pawn can somehow step forward off the board")
-							}
-							if p.board[twoSquare] == NoPiece {
-								moves = append(moves, Move{
-									piece: piece, from: square, to: twoSquare,
-								})
-
-							}
-						}
-					}
-				}
-				// capture
-				for _, m := range []Movement{Movement{-1, pi.forward}, Movement{1, pi.forward}} {
-					captureSquare, err := square.Move(m)
-					if err != nil {
-						continue
-					}
-					if mt.move.castleInfo.castling {
-						for _, kingSquare := range mt.move.castleInfo.betweenSquares {
-							if kingSquare == captureSquare {
-								mt.valid = false
-								return 0
-							}
-						}
-					}
-					pieceAt := p.board[captureSquare]
-					if pieceAt == NoPiece {
-						// en passant
-						if captureSquare == p.enPassantSquare {
-							moves = append(moves, Move{
-								piece: piece, from: square, to: captureSquare, capture: true, enPassant: true,
-							})
-						}
-						continue
-					}
-					if pieceAt.Colour() != p.turn {
-						if pieceAt.Type() == King {
-							mt.valid = false
-							return 0
-						}
-						// promotion
-						if captureSquare.Rank() == pi.promotionRank {
-							for _, promotionPieceType := range []PieceType{Queen, Rook, Bishop, Knight} {
-								moves = append(moves, Move{
-									piece: piece, from: square, to: captureSquare, capture: true, promote: promotionPieceType,
-								})
-							}
-						} else {
-							moves = append(moves, Move{
-								piece: piece, from: square, to: captureSquare, capture: true,
-							})
-						}
-					}
-				}
-			}
-			if piece.Type() == King {
-				if !p.kingMoved[p.turn] {
-					for _, rookSquare := range p.rookSquares {
-						if rookSquare == NoSquare {
-							continue
-						}
-						if p.board[rookSquare].Colour() != p.turn {
-							continue
-						}
-						blocked := false
-						for _, betweenSquare := range BetweenSquares(square, rookSquare) {
-							if p.board[betweenSquare] != NoPiece {
-								blocked = true
-								break
-							}
-						}
-						if blocked {
-							continue
-						}
-						kingPassingSquares := []Square{square}
-						var kingToSquare, rookToSquare Square
-						if rookSquare.File() < square.File() {
-							// a-side castling
-							kingToSquare = ToSquare(File(2), square.Rank())
-							rookToSquare = ToSquare(File(3), square.Rank())
-						} else {
-							// h-side castling
-							kingToSquare = ToSquare(File(6), square.Rank())
-							rookToSquare = ToSquare(File(5), square.Rank())
-						}
-						kingBetweenSquares := BetweenSquares(square, kingToSquare)
-						for _, betweenSquare := range kingBetweenSquares {
-							if p.board[betweenSquare] != NoPiece && betweenSquare != rookSquare {
-								blocked = true
-							}
-						}
-						if p.board[kingToSquare] != NoPiece && kingToSquare != square && kingToSquare != rookSquare {
-							blocked = true
-						}
-						if p.board[rookToSquare] != NoPiece && rookToSquare != square && rookToSquare != rookSquare {
-							blocked = true
-						}
-						if blocked {
-							continue
-						}
-						kingPassingSquares = append(kingPassingSquares, kingBetweenSquares...)
-						kingPassingSquares = append(kingPassingSquares, kingToSquare)
-
-						moves = append(moves, Move{
-							piece: piece, from: square, to: kingToSquare,
-							castleInfo: CastleInfo{castling: true, betweenSquares: kingPassingSquares, rookFrom: rookSquare, rookTo: rookToSquare},
+							piece: piece, from: square, to: captureSquare, capture: true,
 						})
 					}
 				}
 			}
 		}
+		if pieceType == King {
+			if !p.kingMoved[p.turn] {
+				for _, rookSquare := range p.rookSquares {
+					if rookSquare == NoSquare || p.board[rookSquare].Colour() != p.turn {
+						continue
+					}
+					blocked := false
+					for _, betweenSquare := range BetweenSquares(square, rookSquare) {
+						if p.board[betweenSquare] != NoPiece {
+							blocked = true
+							break
+						}
+					}
+					if blocked {
+						continue
+					}
+					var kingToSquare, rookToSquare Square
+					if rookSquare.File() < square.File() {
+						// a-side castling
+						kingToSquare = ToSquare(File(2), square.Rank())
+						rookToSquare = ToSquare(File(3), square.Rank())
+					} else {
+						// h-side castling
+						kingToSquare = ToSquare(File(6), square.Rank())
+						rookToSquare = ToSquare(File(5), square.Rank())
+					}
+					kingBetweenSquares := BetweenSquares(square, kingToSquare)
+					for _, betweenSquare := range kingBetweenSquares {
+						if p.board[betweenSquare] != NoPiece && betweenSquare != rookSquare {
+							blocked = true
+							break
+						}
+					}
+					if blocked {
+						continue
+					}
+					if p.board[kingToSquare] != NoPiece && kingToSquare != square && kingToSquare != rookSquare {
+						continue
+					}
+					if p.board[rookToSquare] != NoPiece && rookToSquare != square && rookToSquare != rookSquare {
+						continue
+					}
+
+					kingPassingSquares := make([]Square, 0, len(kingBetweenSquares)+1)
+					kingPassingSquares = append(kingPassingSquares, square)
+					kingPassingSquares = append(kingPassingSquares, kingBetweenSquares...)
+					//kingPassingSquares = append(kingPassingSquares, kingToSquare)
+
+					moves = append(moves, Move{
+						piece: piece, from: square, to: kingToSquare,
+						castleInfo: CastleInfo{castling: true, betweenSquares: kingPassingSquares, rookFrom: rookSquare, rookTo: rookToSquare},
+					})
+				}
+			}
+		}
 	}
-	mt.valid = true
+	mt.legal = true
+	mt.depth = depth
 
 	if depth == 0 {
+		cur := mt
+		for parent := cur.parent; parent != nil && parent.depth < cur.depth+1; parent = cur.parent {
+			parent.depth = cur.depth + 1
+			cur = parent
+		}
 		return 1
 	}
 	for _, move := range moves {
@@ -376,13 +393,13 @@ func (mt *MoveTree) FindMoves(depth int) int {
 		child.parent = mt
 		child.move = move
 		child.position = p.ProcessMove(move)
-		y := child.FindMoves(depth - 1)
-		if child.valid {
+		childNodes := child.FindMoves(depth - 1)
+		if child.legal {
 			mt.children = append(mt.children, child)
-			x += y
+			nodes += childNodes
 		}
 	}
-	return x
+	return nodes
 }
 
 func (p Position) ProcessMove(m Move) Position {

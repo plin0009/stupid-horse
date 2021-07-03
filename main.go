@@ -8,5 +8,8 @@ func main() {
 		position: pos,
 	}
 	fmt.Println(tree.FindMoves(4))
-	//fmt.Println(tree)
+	for i, child := range tree.children {
+		fmt.Printf("%v %v\n", i, child.move)
+		fmt.Println(child.FindMoves(3))
+	}
 }
