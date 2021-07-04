@@ -25,12 +25,17 @@ var colourMultiplier = map[PieceColour]int{White: 1, Black: -1}
 func Eval(p Position) int {
 	//fmt.Println(p.board)
 	score := 0
-	for _, piece := range p.board {
+	for _, square := range Squares {
+		piece := p.board[square]
 		// TODO: make use of piece square
 		if piece == NoPiece {
 			continue
 		}
 		score += colourMultiplier[piece.Colour()] * piece.Value()
+		if piece.Type() == Pawn {
+			fileDiff, rankDiff := Diff(ToSquare(File(4), pawnInfo[piece.Colour()].promotionRank), square)
+			score += fileDiff + rankDiff
+		}
 	}
 	return score
 }
