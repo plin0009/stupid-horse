@@ -69,7 +69,7 @@ func CreatePiece(pc PieceColour, pt PieceType) Piece {
 
 func (p Piece) Type() PieceType {
 	if p == NoPiece {
-		panic("No piece")
+		return NoPieceType
 	}
 	return PieceType(p % 10)
 }
@@ -79,24 +79,6 @@ func (p Piece) Colour() PieceColour {
 	}
 	return PieceColour((p/10)%2 == 0)
 }
-func (p Piece) Value() int {
-	switch p.Type() {
-	case Pawn:
-		return 10
-	case Knight:
-		return 70
-	case Bishop:
-		return 30
-	case Rook:
-		return 50
-	case Queen:
-		return 90
-	case King:
-		return 999
-	}
-	return 0
-}
-
 func (pt PieceType) String() string {
 	switch pt {
 	case Pawn:

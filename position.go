@@ -34,8 +34,9 @@ type MoveTree struct {
 	move     Move
 	position Position
 	legal    bool
-	depth    int
 	eval     int
+	discard  bool
+	follow   *MoveTree
 }
 type Movement [2]int
 type PawnInfo struct {
@@ -92,7 +93,7 @@ func LoadInitialPosition(fen string) Position {
 func (m Move) String() string {
 	switch true {
 	case m.piece == NoPiece:
-		panic("No move")
+		return ("No move")
 	case m.castleInfo.castling:
 		if m.to.File() == File(2) {
 			return "O-O-O"
@@ -103,6 +104,31 @@ func (m Move) String() string {
 	default:
 		return fmt.Sprintf("%v%vx%v", m.piece, m.from, m.to)
 	}
+}
+func (mt MoveTree) String() string {
+	return mt.OutputTree(0)
+}
+func (mt MoveTree) OutputTree(indent int) string {
+	str := ""
+	if indent == 0 {
+		if mt.parent != nil {
+			str += mt.parent.move.String() + "\n"
+		}
+		str += mt.position.board.String() + "\n"
+	}
+	for _, child := range mt.children {
+		for i := 0; i < indent; i++ {
+			str += " "
+		}
+		str += fmt.Sprintf("%v ", child.move)
+		if len(child.children) > 0 {
+			str += fmt.Sprintf("(%v): \n", len(child.children))
+		} else {
+			str += "\n"
+		}
+		str += child.OutputTree(indent + 2)
+	}
+	return str
 }
 
 func (s Square) Move(m Movement) (Square, error) {
@@ -161,46 +187,72 @@ func Diff(s1, s2 Square) (files int, ranks int) {
 	return files, ranks
 }
 
-func (mt MoveTree) String() string {
-	return mt.OutputTree(0)
-}
-func (mt MoveTree) OutputTree(indent int) string {
-	str := ""
-	if indent == 0 {
-		if mt.parent != nil {
-			str += mt.parent.move.String() + "\n"
+func (p Position) ProcessMove(m Move) Position {
+	p.board[m.from] = NoPiece
+	if p.board[m.to] != NoPiece && p.board[m.to].Type() == Rook {
+		for i, square := range p.rookSquares {
+			if square == m.to {
+				p.rookSquares[i] = NoSquare
+				break
+			}
 		}
-		str += mt.position.board.String() + "\n"
 	}
-	for _, child := range mt.children {
-		for i := 0; i < indent; i++ {
-			str += " "
+	p.board[m.to] = m.piece
+	p.enPassantSquare = NoSquare
+	switch m.piece.Type() {
+	case Rook:
+		for i, square := range p.rookSquares {
+			if square == m.from {
+				p.rookSquares[i] = NoSquare
+				break
+			}
 		}
-		str += fmt.Sprintf("%v ", child.move)
-		if len(child.children) > 0 {
-			str += fmt.Sprintf("(%v): \n", len(child.children))
-		} else {
-			str += "\n"
+	case King:
+		newMap := map[PieceColour]bool{}
+		for k, v := range p.kingMoved {
+			newMap[k] = v
 		}
-		str += child.OutputTree(indent + 2)
+		p.kingMoved = newMap
+		p.kingMoved[p.turn] = true
+		if m.castleInfo.castling {
+			rook := p.board[m.castleInfo.rookFrom]
+			p.board[m.castleInfo.rookFrom] = NoPiece
+			p.board[m.castleInfo.rookTo] = rook
+			for i, rookSquare := range p.rookSquares {
+				if rookSquare == m.castleInfo.rookFrom {
+					p.rookSquares[i] = NoSquare
+				}
+			}
+		}
+	case Pawn:
+		_, ranks := Diff(m.from, m.to)
+		if ranks == 2 {
+			p.enPassantSquare = BetweenSquares(m.from, m.to)[0]
+		}
+		if m.enPassant {
+			victim := ToSquare(m.to.File(), m.from.Rank())
+			p.board[victim] = NoPiece
+		}
+		if m.promote != NoPieceType {
+			p.board[m.to] = CreatePiece(p.turn, m.promote)
+		}
 	}
-	return str
+	p.turn = p.turn.Flip()
+	return p
 }
 
-func (mt *MoveTree) FindMoves(depth int) int {
+func (mt *MoveTree) FindMoves(depth int, f func(cmt *MoveTree, moves []Move, depth int) int) int {
 	// if searched before
 	if mt.legal {
-		if depth == 0 {
-			return 1
-		}
-		nodes := 0
-		for _, child := range mt.children {
-			nodes += child.FindMoves(depth - 1)
-		}
-		return nodes
+		// temp: reset everything
+		mt.legal = false
+		mt.eval = 0
+		mt.discard = false
+		mt.children = nil
+		mt.follow = nil
 	}
 	p := mt.position
-	nodes := 0
+	//nodes := 0
 	var moves []Move
 	for _, square := range Squares {
 		piece := p.board[square]
@@ -378,80 +430,29 @@ func (mt *MoveTree) FindMoves(depth int) int {
 		}
 	}
 	mt.legal = true
-	mt.depth = depth
-
-	if depth == 0 {
-		cur := mt
-		for parent := cur.parent; parent != nil && parent.depth < cur.depth+1; parent = cur.parent {
-			parent.depth = cur.depth + 1
-			cur = parent
-		}
-		return 1
-	}
-	for _, move := range moves {
-		child := new(MoveTree)
-		child.parent = mt
-		child.move = move
-		child.position = p.ProcessMove(move)
-		childNodes := child.FindMoves(depth - 1)
-		if child.legal {
-			mt.children = append(mt.children, child)
-			nodes += childNodes
-		}
-	}
-	return nodes
+	rv := f(mt, moves, depth)
+	return rv
 }
 
-func (p Position) ProcessMove(m Move) Position {
-	p.board[m.from] = NoPiece
-	if p.board[m.to] != NoPiece && p.board[m.to].Type() == Rook {
-		for i, square := range p.rookSquares {
-			if square == m.to {
-				p.rookSquares[i] = NoSquare
-				break
+func (root *MoveTree) FindAllMoves(startDepth int) int {
+	var c func(mt *MoveTree, moves []Move, depth int) int
+	c = func(mt *MoveTree, moves []Move, depth int) int {
+		if depth == 0 {
+			return 1
+		}
+		nodes := 0
+		for _, move := range moves {
+			child := new(MoveTree)
+			child.parent = mt
+			child.move = move
+			child.position = mt.position.ProcessMove(move)
+			childNodes := child.FindMoves(depth-1, c)
+			if child.legal {
+				mt.children = append(mt.children, child)
+				nodes += childNodes
 			}
 		}
+		return nodes
 	}
-	p.board[m.to] = m.piece
-	p.enPassantSquare = NoSquare
-	switch m.piece.Type() {
-	case Rook:
-		for i, square := range p.rookSquares {
-			if square == m.from {
-				p.rookSquares[i] = NoSquare
-				break
-			}
-		}
-	case King:
-		newMap := map[PieceColour]bool{}
-		for k, v := range p.kingMoved {
-			newMap[k] = v
-		}
-		p.kingMoved = newMap
-		p.kingMoved[p.turn] = true
-		if m.castleInfo.castling {
-			rook := p.board[m.castleInfo.rookFrom]
-			p.board[m.castleInfo.rookFrom] = NoPiece
-			p.board[m.castleInfo.rookTo] = rook
-			for i, rookSquare := range p.rookSquares {
-				if rookSquare == m.castleInfo.rookFrom {
-					p.rookSquares[i] = NoSquare
-				}
-			}
-		}
-	case Pawn:
-		_, ranks := Diff(m.from, m.to)
-		if ranks == 2 {
-			p.enPassantSquare = BetweenSquares(m.from, m.to)[0]
-		}
-		if m.enPassant {
-			victim := ToSquare(m.to.File(), m.from.Rank())
-			p.board[victim] = NoPiece
-		}
-		if m.promote != NoPieceType {
-			p.board[m.to] = CreatePiece(p.turn, m.promote)
-		}
-	}
-	p.turn = p.turn.Flip()
-	return p
+	return root.FindMoves(startDepth, c)
 }
