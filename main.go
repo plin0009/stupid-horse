@@ -1,9 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/joho/godotenv"
+)
 
 func main() {
-	pos := LoadInitialPosition("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+
+	pos := LoadInitialPosition("bnrnqkrb/pppppppp/8/8/8/8/PPPPPPPP/BNRNQKRB w KQkq -")
 	tree := MoveTree{
 		position: pos,
 	}
@@ -28,4 +34,13 @@ func main() {
 		}
 		Think(beginning)
 	}
+}
+
+func startBot() {
+	err := godotenv.Load()
+	if err != nil {
+		panic("could not load .env file")
+	}
+	b := Bot{token: os.Getenv("lichess_key")}
+	b.Listen()
 }
