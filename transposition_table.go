@@ -2,6 +2,8 @@ package main
 
 import "fmt"
 
+const TTMaxSize = 1000000
+
 type TranspositionTable struct {
 	lookup   map[Position]*MoveTree
 	stack    []Position

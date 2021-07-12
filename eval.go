@@ -1,5 +1,7 @@
 package main
 
+const checkmateValue = 9999999
+
 func (p Piece) Value() int {
 	switch p.Type() {
 	case Pawn:
@@ -73,6 +75,14 @@ func Think(mt *MoveTree) int {
 				if !child.legal {
 					continue
 				}
+				switch child.state {
+				case Stalemate:
+					child.eval = 0
+				case WhiteWon:
+					child.eval = colourMultiplier[White] * checkmateValue
+				case BlackWon:
+					child.eval = colourMultiplier[Black] * checkmateValue
+				}
 				mt.children = append(mt.children, child)
 				if mt.position.turn == White {
 					if child.eval > mt.eval {
@@ -101,6 +111,6 @@ func Think(mt *MoveTree) int {
 			return mt.eval
 		}
 	}
-	tt := NewTranspositionTable(1000000)
+	tt := NewTranspositionTable(TTMaxSize)
 	return mt.FindMoves(BotDepth, tt, minimax(-9999999, 9999999))
 }

@@ -39,12 +39,28 @@ type MoveTree struct {
 	legal          bool
 	eval           int
 	follow         *MoveTree
+	state          State
 }
 type Movement [2]int
 type PawnInfo struct {
 	homeRank      Rank
 	forward       int
 	promotionRank Rank
+}
+type State int
+
+const (
+	Active State = iota
+	Stalemate
+	WhiteWon
+	BlackWon
+)
+
+func WinFor(pc PieceColour) State {
+	if pc == White {
+		return WhiteWon
+	}
+	return BlackWon
 }
 
 var pieceMovements = map[PieceType][]Movement{
@@ -271,14 +287,12 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 			mt.parent.legalMoves = append(mt.parent.legalMoves, mt.move)
 		}
 		mt.candidateMoves = cachedMoveTree.candidateMoves
+	} else if mt.legal {
+		mt.children = nil
+		mt.legalMoves = nil
+		mt.follow = nil
+		mt.eval = 0
 	} else {
-		if mt.legal {
-			// temp: reset everything
-			mt.legal = false
-			mt.eval = 0
-			mt.children = nil
-			mt.follow = nil
-		}
 		p := mt.position
 		//nodes := 0
 		moves := make([]Move, 0, 40)
@@ -467,14 +481,22 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 	rv := f(mt, depth, tt)
 	if len(mt.legalMoves) == 0 && depth > 0 {
 		// check if stalemate or checkmate
-		str := ""
-		cur := mt
-		for cur.parent != nil {
-			str = cur.move.String() + " " + str
-			cur = cur.parent
+		lastMove := mt.position.turn.Flip()
+		testMt := new(MoveTree)
+		testMt.position = mt.position
+		// act if we skipped a turn--can opponent take the king?
+		testMt.position.turn = lastMove
+		testMt.FindMoves(0, tt,
+			func(_ *MoveTree, _ int, _ *TranspositionTable) int {
+				return 0
+			})
+		if testMt.legal {
+			mt.state = Stalemate
+		} else {
+			mt.state = WinFor(lastMove)
 		}
-		fmt.Printf("game over: %v\n", str)
 	}
+
 	return rv
 }
 
@@ -498,6 +520,6 @@ func (root *MoveTree) FindAllMoves(startDepth int) int {
 		}
 		return nodes
 	}
-	tt := NewTranspositionTable(1000000)
+	tt := NewTranspositionTable(TTMaxSize)
 	return root.FindMoves(startDepth, tt, c)
 }
