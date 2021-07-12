@@ -55,21 +55,21 @@ func SortByCapture(moves []Move) {
 }
 
 func Think(mt *MoveTree) int {
-	var minimax func(alpha, beta int) func(*MoveTree, []Move, int) int
-	minimax = func(alpha, beta int) func(*MoveTree, []Move, int) int {
-		return func(mt *MoveTree, moves []Move, depth int) int {
+	var minimax func(alpha, beta int) func(*MoveTree, int, *TranspositionTable) int
+	minimax = func(alpha, beta int) func(*MoveTree, int, *TranspositionTable) int {
+		return func(mt *MoveTree, depth int, tt *TranspositionTable) int {
 			if depth == 0 {
 				mt.eval = Eval(mt.position)
 				return mt.eval
 			}
 			mt.eval = colourMultiplier[mt.position.turn] * -9999999
-			SortByCapture(moves)
-			for _, move := range moves {
+			SortByCapture(mt.candidateMoves)
+			for _, move := range mt.candidateMoves {
 				child := new(MoveTree)
 				child.parent = mt
 				child.move = move
 				child.position = mt.position.ProcessMove(move)
-				child.FindMoves(depth-1, minimax(alpha, beta))
+				child.FindMoves(depth-1, tt, minimax(alpha, beta))
 				if !child.legal {
 					continue
 				}
@@ -83,7 +83,6 @@ func Think(mt *MoveTree) int {
 						alpha = child.eval
 					}
 					if alpha >= beta {
-						mt.discard = true
 						break
 					}
 				} else {
@@ -95,7 +94,6 @@ func Think(mt *MoveTree) int {
 						beta = child.eval
 					}
 					if beta <= alpha {
-						mt.discard = true
 						break
 					}
 				}
@@ -103,6 +101,6 @@ func Think(mt *MoveTree) int {
 			return mt.eval
 		}
 	}
-
-	return mt.FindMoves(BotDepth, minimax(-9999999, 9999999))
+	tt := NewTranspositionTable(1000000)
+	return mt.FindMoves(BotDepth, tt, minimax(-9999999, 9999999))
 }
