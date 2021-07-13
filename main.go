@@ -14,6 +14,6 @@ func startBot() {
 	if err != nil {
 		panic("could not load .env file")
 	}
-	b := Bot{token: os.Getenv("lichess_key")}
+	b := Bot{token: os.Getenv("LICHESS_KEY")}
 	b.Listen()
 }

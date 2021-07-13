@@ -14,24 +14,23 @@ type Position struct {
 	enPassantSquare Square
 }
 type Move struct {
-	piece      Piece
-	from       Square
-	to         Square
-	capture    bool
-	castleInfo CastleInfo
-	enPassant  bool
-	promote    PieceType
+	from    Square
+	to      Square
+	capture bool
+	promote PieceType
+	castle  CastleDirection
 }
-type CastleInfo struct {
-	castling       bool
-	betweenSquares []Square
-	rookFrom       Square
-	rookTo         Square
-}
+
+type CastleDirection int
+
+const (
+	NoCastle CastleDirection = iota
+	ASide
+	HSide
+)
 
 type MoveTree struct {
 	parent         *MoveTree
-	children       []*MoveTree
 	move           Move
 	position       Position
 	candidateMoves []Move
@@ -100,6 +99,9 @@ var pawnInfo = map[PieceColour]PawnInfo{
 }
 
 func LoadInitialPosition(fen string) Position {
+	if fen == "startpos" {
+		fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+	}
 	var b Board
 	var rs [4]Square
 	nr := 0
@@ -133,44 +135,7 @@ func LoadInitialPosition(fen string) Position {
 }
 
 func (m Move) String() string {
-	switch true {
-	case m.piece == NoPiece:
-		return ("")
-	case m.castleInfo.castling:
-		if m.to.File() == File(2) {
-			return "O-O-O"
-		}
-		return "O-O"
-	case !m.capture:
-		return fmt.Sprintf("%v%v%v", m.piece, m.from, m.to)
-	default:
-		return fmt.Sprintf("%v%vx%v", m.piece, m.from, m.to)
-	}
-}
-func (mt MoveTree) String() string {
-	return mt.OutputTree(0)
-}
-func (mt MoveTree) OutputTree(indent int) string {
-	str := ""
-	if indent == 0 {
-		if mt.parent != nil {
-			str += mt.parent.move.String() + "\n"
-		}
-		str += mt.position.board.String() + "\n"
-	}
-	for _, child := range mt.children {
-		for i := 0; i < indent; i++ {
-			str += " "
-		}
-		str += fmt.Sprintf("%v ", child.move)
-		if len(child.children) > 0 {
-			str += fmt.Sprintf("(%v): \n", len(child.children))
-		} else {
-			str += "\n"
-		}
-		str += child.OutputTree(indent + 2)
-	}
-	return str
+	return fmt.Sprintf("%v%v%v", m.from, m.to, m.promote)
 }
 
 func (s Square) Move(m Movement) (Square, error) {
@@ -229,9 +194,23 @@ func Diff(s1, s2 Square) (files int, ranks int) {
 	return files, ranks
 }
 
+func GetCastleSquares(kingSquare, rookSquare Square) (Square, Square) {
+	rank := kingSquare.Rank()
+	if rookSquare.File() < kingSquare.File() {
+		// a-side castling
+		return ToSquare(File(2), rank), ToSquare(File(3), rank)
+	} else {
+		// h-side castling
+		return ToSquare(File(6), rank), ToSquare(File(5), rank)
+	}
+}
+
 func (p Position) ProcessMove(m Move) Position {
+	fromPiece := p.board[m.from]
+	toPiece := p.board[m.to]
 	p.board[m.from] = NoPiece
-	if p.board[m.to] != NoPiece && p.board[m.to].Type() == Rook {
+	// if captured a rook, remove it from unmoved rooks
+	if toPiece != NoPiece && toPiece.Type() == Rook {
 		for i, square := range p.rookSquares {
 			if square == m.to {
 				p.rookSquares[i] = NoSquare
@@ -239,10 +218,11 @@ func (p Position) ProcessMove(m Move) Position {
 			}
 		}
 	}
-	p.board[m.to] = m.piece
+	p.board[m.to] = fromPiece
 	p.enPassantSquare = NoSquare
-	switch m.piece.Type() {
+	switch fromPiece.Type() {
 	case Rook:
+		// if moved an unmoved rook, remove it from unmoved rooks
 		for i, square := range p.rookSquares {
 			if square == m.from {
 				p.rookSquares[i] = NoSquare
@@ -251,22 +231,19 @@ func (p Position) ProcessMove(m Move) Position {
 		}
 	case King:
 		p.setKingMoved(p.turn, true)
-		if m.castleInfo.castling {
-			rook := p.board[m.castleInfo.rookFrom]
-			p.board[m.castleInfo.rookFrom] = NoPiece
-			p.board[m.castleInfo.rookTo] = rook
-			for i, rookSquare := range p.rookSquares {
-				if rookSquare == m.castleInfo.rookFrom {
-					p.rookSquares[i] = NoSquare
-				}
-			}
+		if m.castle != NoCastle {
+			p.board[m.to] = NoPiece
+			kingSquare, rookSquare := GetCastleSquares(m.from, m.to)
+			p.board[kingSquare] = fromPiece
+			p.board[rookSquare] = toPiece
 		}
 	case Pawn:
 		_, ranks := Diff(m.from, m.to)
 		if ranks == 2 {
 			p.enPassantSquare = BetweenSquares(m.from, m.to)[0]
 		}
-		if m.enPassant {
+		// en passant
+		if toPiece == NoPiece {
 			victim := ToSquare(m.to.File(), m.from.Rank())
 			p.board[victim] = NoPiece
 		}
@@ -288,7 +265,6 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 		}
 		mt.candidateMoves = cachedMoveTree.candidateMoves
 	} else if mt.legal {
-		mt.children = nil
 		mt.legalMoves = nil
 		mt.follow = nil
 		mt.eval = 0
@@ -311,19 +287,36 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 						if err != nil {
 							break
 						}
-						curSquare = newSquare
-						if mt.move.castleInfo.castling {
-							for _, kingSquare := range mt.move.castleInfo.betweenSquares {
-								if kingSquare == curSquare {
-									mt.legal = false
-									return 0
+						// check if parent castling is valid
+						increment := 0
+						if mt.move.castle != NoCastle {
+							rank := mt.move.from.Rank()
+							if newSquare.Rank() == rank {
+								// TODO: optimize checking squares by avoiding loop
+								if mt.move.castle == ASide {
+									increment = -1
+								} else {
+									increment = 1
+								}
+								for f := mt.move.from.File(); ; f = File(int(f) + increment) {
+									passSquare := ToSquare(f, rank)
+									if passSquare == newSquare {
+										mt.legal = false
+										return 0
+									}
+									passPiece := p.board[passSquare]
+									if passPiece != NoPiece && passPiece.Type() == King {
+										break
+									}
 								}
 							}
 						}
+
+						curSquare = newSquare
 						pieceAt := p.board[curSquare]
 						if pieceAt == NoPiece {
 							moves = append(moves, Move{
-								piece: piece, from: square, to: curSquare,
+								from: square, to: curSquare,
 							})
 							continue
 						} else if pieceAt.Colour() != p.turn {
@@ -332,7 +325,7 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 								return 0
 							}
 							moves = append(moves, Move{
-								piece: piece, from: square, to: curSquare, capture: true,
+								from: square, to: curSquare, capture: true,
 							})
 						}
 						break
@@ -350,12 +343,12 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 					if oneSquare.Rank() == pi.promotionRank {
 						for _, promotionPieceType := range []PieceType{Queen, Rook, Bishop, Knight} {
 							moves = append(moves, Move{
-								piece: piece, from: square, to: oneSquare, promote: promotionPieceType,
+								from: square, to: oneSquare, promote: promotionPieceType,
 							})
 						}
 					} else {
 						moves = append(moves, Move{
-							piece: piece, from: square, to: oneSquare,
+							from: square, to: oneSquare,
 						})
 						// two squares forward
 						if square.Rank() == pi.homeRank {
@@ -365,7 +358,7 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 							}
 							if p.board[twoSquare] == NoPiece {
 								moves = append(moves, Move{
-									piece: piece, from: square, to: twoSquare,
+									from: square, to: twoSquare,
 								})
 							}
 						}
@@ -377,11 +370,27 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 					if err != nil {
 						continue
 					}
-					if mt.move.castleInfo.castling {
-						for _, kingSquare := range mt.move.castleInfo.betweenSquares {
-							if kingSquare == captureSquare {
-								mt.legal = false
-								return 0
+					// check if parent castling is valid
+					increment := 0
+					if mt.move.castle != NoCastle {
+						rank := mt.move.from.Rank()
+						if captureSquare.Rank() == rank {
+							// TODO: optimize checking squares by avoiding loop
+							if mt.move.castle == ASide {
+								increment = -1
+							} else {
+								increment = 1
+							}
+							for f := mt.move.from.File(); ; f = File(int(f) + increment) {
+								passSquare := ToSquare(f, rank)
+								if passSquare == captureSquare {
+									mt.legal = false
+									return 0
+								}
+								passPiece := p.board[passSquare]
+								if passPiece != NoPiece && passPiece.Type() == King {
+									break
+								}
 							}
 						}
 					}
@@ -390,7 +399,7 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 						// en passant
 						if captureSquare == p.enPassantSquare {
 							moves = append(moves, Move{
-								piece: piece, from: square, to: captureSquare, capture: true, enPassant: true,
+								from: square, to: captureSquare, capture: true,
 							})
 						}
 						continue
@@ -404,12 +413,12 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 						if captureSquare.Rank() == pi.promotionRank {
 							for _, promotionPieceType := range []PieceType{Queen, Rook, Bishop, Knight} {
 								moves = append(moves, Move{
-									piece: piece, from: square, to: captureSquare, capture: true, promote: promotionPieceType,
+									from: square, to: captureSquare, capture: true, promote: promotionPieceType,
 								})
 							}
 						} else {
 							moves = append(moves, Move{
-								piece: piece, from: square, to: captureSquare, capture: true,
+								from: square, to: captureSquare, capture: true,
 							})
 						}
 					}
@@ -431,15 +440,12 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 						if blocked {
 							continue
 						}
-						var kingToSquare, rookToSquare Square
-						if rookSquare.File() < square.File() {
-							// a-side castling
-							kingToSquare = ToSquare(File(2), square.Rank())
-							rookToSquare = ToSquare(File(3), square.Rank())
-						} else {
-							// h-side castling
-							kingToSquare = ToSquare(File(6), square.Rank())
-							rookToSquare = ToSquare(File(5), square.Rank())
+						kingToSquare, rookToSquare := GetCastleSquares(square, rookSquare)
+						if p.board[kingToSquare] != NoPiece && kingToSquare != square && kingToSquare != rookSquare {
+							continue
+						}
+						if p.board[rookToSquare] != NoPiece && rookToSquare != square && rookToSquare != rookSquare {
+							continue
 						}
 						kingBetweenSquares := BetweenSquares(square, kingToSquare)
 						for _, betweenSquare := range kingBetweenSquares {
@@ -451,21 +457,14 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 						if blocked {
 							continue
 						}
-						if p.board[kingToSquare] != NoPiece && kingToSquare != square && kingToSquare != rookSquare {
-							continue
-						}
-						if p.board[rookToSquare] != NoPiece && rookToSquare != square && rookToSquare != rookSquare {
-							continue
-						}
 
-						kingPassingSquares := make([]Square, 0, len(kingBetweenSquares)+1)
-						kingPassingSquares = append(kingPassingSquares, square)
-						kingPassingSquares = append(kingPassingSquares, kingBetweenSquares...)
-						//kingPassingSquares = append(kingPassingSquares, kingToSquare)
+						castleDirection := ASide
+						if rookSquare.File() > square.File() {
+							castleDirection = HSide
+						}
 
 						moves = append(moves, Move{
-							piece: piece, from: square, to: kingToSquare,
-							castleInfo: CastleInfo{castling: true, betweenSquares: kingPassingSquares, rookFrom: rookSquare, rookTo: rookToSquare},
+							from: square, to: rookSquare, castle: castleDirection,
 						})
 					}
 				}
@@ -514,7 +513,6 @@ func (root *MoveTree) FindAllMoves(startDepth int) int {
 			child.position = mt.position.ProcessMove(move)
 			childNodes := child.FindMoves(depth-1, tt, c)
 			if child.legal {
-				mt.children = append(mt.children, child)
 				nodes += childNodes
 			}
 		}

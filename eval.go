@@ -83,7 +83,6 @@ func Think(mt *MoveTree) int {
 				case BlackWon:
 					child.eval = colourMultiplier[Black] * checkmateValue
 				}
-				mt.children = append(mt.children, child)
 				if mt.position.turn == White {
 					if child.eval > mt.eval {
 						mt.eval = child.eval

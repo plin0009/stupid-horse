@@ -15,10 +15,6 @@ type Bot struct {
 	token string
 }
 
-type Game struct {
-	moveTree MoveTree
-}
-
 type LichessEvent struct {
 	Type      string
 	Game      *LichessGame

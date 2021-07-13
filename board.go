@@ -82,17 +82,17 @@ func (p Piece) Colour() PieceColour {
 func (pt PieceType) String() string {
 	switch pt {
 	case Pawn:
-		return "pawn"
+		return "p"
 	case Knight:
-		return "knight"
+		return "n"
 	case Bishop:
-		return "bishop"
+		return "b"
 	case Rook:
-		return "rook"
+		return "r"
 	case Queen:
-		return "queen"
+		return "q"
 	case King:
-		return "king"
+		return "k"
 	}
 	return ""
 }

@@ -6,7 +6,7 @@ import (
 )
 
 func TestFindAllMoves(t *testing.T) {
-	normalpos := LoadInitialPosition("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+	normalpos := LoadInitialPosition("startpos")
 	t.Run("normal d=4", func(t *testing.T) {
 		tree := MoveTree{position: normalpos}
 		nodes := tree.FindAllMoves(4)
@@ -27,6 +27,20 @@ func TestFindAllMoves(t *testing.T) {
 
 	// too slow to test right now (> 10 min)
 	/*
+	 *t.Run("normal d=6", func(t *testing.T) {
+	 *  if testing.Short() {
+	 *    t.Skip("skipping normal d=6 in short mode.")
+	 *  }
+	 *  tree := MoveTree{position: normalpos}
+	 *  nodes := tree.FindAllMoves(6)
+	 *  if nodes != 119060324 {
+	 *    t.Errorf("FindAllMoves(6) = %d; want 119060324", nodes)
+	 *  }
+	 *})
+	 */
+
+	// too slow to test right now (> 10 min)
+	/*
 	 *t.Run("normal d=7", func(t *testing.T) {
 	 *  if testing.Short() {
 	 *    t.Skip("skipping normal d=7 in short mode.")
@@ -34,7 +48,7 @@ func TestFindAllMoves(t *testing.T) {
 	 *  tree := MoveTree{position: normalpos}
 	 *  nodes := tree.FindAllMoves(7)
 	 *  if nodes != 3195901860 {
-	 *    t.Errorf("FindAllMoves(5) = %d; want 3195901860", nodes)
+	 *    t.Errorf("FindAllMoves(7) = %d; want 3195901860", nodes)
 	 *  }
 	 *})
 	 */
