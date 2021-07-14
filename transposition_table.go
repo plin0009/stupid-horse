@@ -21,10 +21,16 @@ func NewTranspositionTable(capacity int) *TranspositionTable {
 }
 
 func (tt *TranspositionTable) Get(pos Position) *MoveTree {
+	if tt == nil {
+		return nil
+	}
 	return tt.lookup[pos]
 }
 
 func (tt *TranspositionTable) Add(mt *MoveTree) {
+	if tt == nil {
+		return
+	}
 	if tt.lookup[mt.position] != nil {
 		// already an entry
 		return

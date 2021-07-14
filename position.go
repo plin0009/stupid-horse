@@ -55,6 +55,20 @@ const (
 	BlackWon
 )
 
+func (s State) String() string {
+	switch s {
+	case Active:
+		return "active"
+	case Stalemate:
+		return "stalemate"
+	case WhiteWon:
+		return "white won"
+	case BlackWon:
+		return "black won"
+	}
+	panic("Invalid state")
+}
+
 func WinFor(pc PieceColour) State {
 	if pc == White {
 		return WhiteWon
@@ -136,6 +150,50 @@ func LoadInitialPosition(fen string) Position {
 
 func (m Move) String() string {
 	return fmt.Sprintf("%v%v%v", m.from, m.to, m.promote)
+}
+
+// converts algebraic notation to move object
+func (p Position) StringToMove(moveString string) Move {
+	m := Move{
+		from: StringToSquare(moveString[:2]),
+		to:   StringToSquare(moveString[2:4]),
+	}
+	toPiece := p.board[m.to]
+	if toPiece != NoPiece {
+		if toPiece.Colour() != p.turn {
+			m.capture = true
+		} else {
+			// own rook is at to square -- castle
+			if m.to.File() < m.from.File() {
+				m.castle = ASide
+			} else {
+				m.castle = HSide
+			}
+		}
+	} else {
+		// check for standard variant notation of castling
+		fromPiece := p.board[m.from]
+		if fromPiece.Type() == King {
+			switch moveString {
+			case "e8c8":
+				m.to = p.rookSquares[1]
+				m.castle = ASide
+			case "e8g8":
+				m.to = p.rookSquares[2]
+				m.castle = HSide
+			case "e1c1":
+				m.to = p.rookSquares[2]
+				m.castle = ASide
+			case "e1g1":
+				m.to = p.rookSquares[3]
+				m.castle = HSide
+			}
+		}
+	}
+	if len(moveString) == 5 {
+		m.promote = StringToPieceType(string(moveString[4]))
+	}
+	return m
 }
 
 func (s Square) Move(m Movement) (Square, error) {
@@ -270,7 +328,6 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 		mt.eval = 0
 	} else {
 		p := mt.position
-		//nodes := 0
 		moves := make([]Move, 0, 40)
 		for _, square := range Squares {
 			piece := p.board[square]
@@ -520,4 +577,22 @@ func (root *MoveTree) FindAllMoves(startDepth int) int {
 	}
 	tt := NewTranspositionTable(TTMaxSize)
 	return root.FindMoves(startDepth, tt, c)
+}
+
+func (root *MoveTree) Peek() {
+	var f func(*MoveTree, int, *TranspositionTable) int
+	f = func(mt *MoveTree, depth int, tt *TranspositionTable) int {
+		if depth == 0 {
+			return 0
+		}
+		for _, move := range mt.candidateMoves {
+			child := new(MoveTree)
+			child.parent = mt
+			child.move = move
+			child.position = mt.position.ProcessMove(move)
+			child.FindMoves(depth-1, tt, f)
+		}
+		return 0
+	}
+	root.FindMoves(1, nil, f)
 }

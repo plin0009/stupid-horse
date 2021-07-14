@@ -96,6 +96,23 @@ func (pt PieceType) String() string {
 	}
 	return ""
 }
+func StringToPieceType(str string) PieceType {
+	switch str {
+	case "p":
+		return Pawn
+	case "n":
+		return Knight
+	case "b":
+		return Bishop
+	case "r":
+		return Rook
+	case "q":
+		return Queen
+	case "k":
+		return King
+	}
+	return NoPieceType
+}
 func (pc PieceColour) String() string {
 	if pc == White {
 		return "white"
@@ -141,6 +158,20 @@ func (r Rank) String() string {
 }
 func (s Square) String() string {
 	return s.File().String() + s.Rank().String()
+}
+func StringToSquare(str string) Square {
+	if len(str) != 2 {
+		return NoSquare
+	}
+	fileNum := rune(str[0]) - 'a'
+	rankNum := rune(str[1]) - '1'
+	if fileNum < 0 || fileNum > 7 {
+		return NoSquare
+	}
+	if rankNum < 0 || rankNum > 7 {
+		return NoSquare
+	}
+	return ToSquare(File(fileNum), Rank(rankNum))
 }
 
 func (pc PieceColour) Flip() PieceColour {
