@@ -105,6 +105,7 @@ func Think(mt *MoveTree, depth int) int {
 					}
 				}
 			}
+			mt.eval = mt.eval * 99 / 100 // soften the evaluation of less immediate lines
 			return mt.eval
 		}
 	}
