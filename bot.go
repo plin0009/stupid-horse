@@ -55,7 +55,7 @@ func (b *Bot) Listen() {
 		switch e.Type {
 		case "gameStart":
 			// load game to bot
-			b.loadGame(e.Game)
+			go b.loadGame(e.Game)
 		case "gameFinish":
 			// remove game from bot
 			fmt.Println("removing finished game")
@@ -137,6 +137,10 @@ func (b *Bot) ProcessGameState(s LichessGameEvent) {
 	}
 	fmt.Println(s.Status)
 	if s.Status != "started" {
+		return
+	}
+	if b.game == nil {
+		fmt.Println("Game does not exist anymore")
 		return
 	}
 	// update timers
