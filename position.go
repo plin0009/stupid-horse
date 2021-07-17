@@ -176,10 +176,10 @@ func (p Position) StringToMove(moveString string) Move {
 		if fromPiece.Type() == King {
 			switch moveString {
 			case "e8c8":
-				m.to = p.rookSquares[1]
+				m.to = p.rookSquares[0]
 				m.castle = ASide
 			case "e8g8":
-				m.to = p.rookSquares[2]
+				m.to = p.rookSquares[1]
 				m.castle = HSide
 			case "e1c1":
 				m.to = p.rookSquares[2]
@@ -355,7 +355,7 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 								} else {
 									increment = 1
 								}
-								for f := mt.move.from.File(); ; f = File(int(f) + increment) {
+								for f := mt.move.from.File(); f >= 0 && f < 8; f = File(int(f) + increment) {
 									passSquare := ToSquare(f, rank)
 									if passSquare == newSquare {
 										mt.legal = false
@@ -438,7 +438,7 @@ func (mt *MoveTree) FindMoves(depth int, tt *TranspositionTable, f func(*MoveTre
 							} else {
 								increment = 1
 							}
-							for f := mt.move.from.File(); ; f = File(int(f) + increment) {
+							for f := mt.move.from.File(); f >= 0 && f < 8; f = File(int(f) + increment) {
 								passSquare := ToSquare(f, rank)
 								if passSquare == captureSquare {
 									mt.legal = false
