@@ -75,28 +75,24 @@ func TestFindAllMoves(t *testing.T) {
 }
 
 func TestMoveTreeState(t *testing.T) {
-	players := map[PieceColour]Player{
-		White: Player{name: "Player 1", me: true},
-		Black: Player{name: "Player 2", me: false},
-	}
 	t.Run("Fastest checkmate", func(t *testing.T) {
-		g := NewGame("startpos", players)
-		g.Moves("f2f4 e7e5 g2g4")
+		g := NewGame("startpos", nil, nil)
+		g.AddMoves("f2f4 e7e5 g2g4")
 		if g.moveTree.state != Active {
 			t.Errorf("Fastest checkmate half-move 3: %v, want %v", g.moveTree.state, Active)
 		}
-		g.Move("d8h4")
+		g.AddMoves("d8h4")
 		if g.moveTree.state != BlackWon {
 			t.Errorf("Fastest checkmate half-move 4: %v, want %v", g.moveTree.state, BlackWon)
 		}
 	})
 	t.Run("Fastest stalemate", func(t *testing.T) {
-		g := NewGame("startpos", players)
-		g.Moves("c2c4 h7h5 h2h4 a7a5 d1a4 a8a6 a4a5 a6h6 a5c7 f7f6 c7d7 e8f7 d7b7 d8d3 b7b8 d3h7 b8c8 f7g6")
+		g := NewGame("startpos", nil, nil)
+		g.AddMoves("c2c4 h7h5 h2h4 a7a5 d1a4 a8a6 a4a5 a6h6 a5c7 f7f6 c7d7 e8f7 d7b7 d8d3 b7b8 d3h7 b8c8 f7g6")
 		if g.moveTree.state != Active {
 			t.Errorf("Fastest stalemate half-move 18: %v, want %v", g.moveTree.state, Active)
 		}
-		g.Move("c8e6")
+		g.AddMoves("c8e6")
 		if g.moveTree.state != Stalemate {
 			t.Errorf("Fastest stalemate half-move 19: %v, want %v", g.moveTree.state, Stalemate)
 		}

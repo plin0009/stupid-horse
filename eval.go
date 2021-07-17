@@ -42,8 +42,6 @@ func Eval(p Position) int {
 	return score
 }
 
-const BotDepth = 6
-
 func SortByCapture(moves []Move) {
 	lastCapture := 0
 	for i, move := range moves {
@@ -56,7 +54,7 @@ func SortByCapture(moves []Move) {
 	}
 }
 
-func Think(mt *MoveTree) int {
+func Think(mt *MoveTree, depth int) int {
 	var minimax func(alpha, beta int) func(*MoveTree, int, *TranspositionTable) int
 	minimax = func(alpha, beta int) func(*MoveTree, int, *TranspositionTable) int {
 		return func(mt *MoveTree, depth int, tt *TranspositionTable) int {
@@ -64,7 +62,7 @@ func Think(mt *MoveTree) int {
 				mt.eval = Eval(mt.position)
 				return mt.eval
 			}
-			mt.eval = colourMultiplier[mt.position.turn] * -9999999
+			mt.eval = colourMultiplier[mt.position.turn] * -checkmateValue * 10
 			SortByCapture(mt.candidateMoves)
 			for _, move := range mt.candidateMoves {
 				child := new(MoveTree)
@@ -111,5 +109,5 @@ func Think(mt *MoveTree) int {
 		}
 	}
 	tt := NewTranspositionTable(TTMaxSize)
-	return mt.FindMoves(BotDepth, tt, minimax(-9999999, 9999999))
+	return mt.FindMoves(depth, tt, minimax(-checkmateValue*10, checkmateValue*10))
 }

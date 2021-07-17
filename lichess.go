@@ -1,19 +1,12 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 )
 
 const url = "https://lichess.org/api/"
-
-type Bot struct {
-	games []Game
-	token string
-}
 
 type LichessEvent struct {
 	Type      string
@@ -43,61 +36,73 @@ type LichessTimeControl struct {
 	Show      string
 }
 
-func (b Bot) Listen() {
-	client := &http.Client{}
+type LichessGameEvent struct {
+	Type string
 
-	req, err := http.NewRequest("GET", url+"stream/event", nil)
+	// gameFull
+	Variant    *LichessVariant
+	Rated      bool
+	Clock      *LichessClock
+	White      *LichessPlayer
+	Black      *LichessPlayer
+	InitialFen string
+	State      *LichessGameEvent
+
+	// gameState
+	Moves  string
+	Wtime  uint
+	Btime  uint
+	Winc   uint
+	Binc   uint
+	Status string
+	Winner string
+
+	// chatLine
+	Username string
+	Text     string
+	Room     string
+}
+type LichessPlayer struct {
+	Id     string
+	Name   string
+	Rating int
+	Title  string
+}
+type LichessClock struct {
+	Initial   uint
+	Increment uint
+}
+
+func (b Bot) request(mode string, path string) (resp *http.Response, err error) {
+	req, err := http.NewRequest(mode, url+path, nil)
 	if err != nil {
-		panic("Could not create request")
+		return nil, err
 	}
-
 	req.Header.Add("Authorization", "Bearer "+b.token)
-	resp, err := client.Do(req)
-	if err != nil {
-		panic("Error with request")
-	}
-	defer resp.Body.Close()
-	for times := 0; times < 20; times++ {
+	return http.DefaultClient.Do(req)
+}
+
+func stream(resp *http.Response, lines chan<- []byte) {
+	for {
 		bytes := make([]byte, 8192)
 		_, err := resp.Body.Read(bytes)
 		if err == io.EOF {
-			break
+			close(lines)
+			return
 		}
 		if err != nil {
 			log.Fatal(err)
 		}
 		start := 0
-		var b []byte
-		fmt.Println("Started listening")
+		var line []byte
 		for i, v := range bytes {
 			if v == 10 {
-				b = bytes[start:i]
-				if len(b) == 0 {
+				line = bytes[start:i]
+				if len(line) == 0 {
 					break
 				}
-				var e LichessEvent
-				err := json.Unmarshal(b, &e)
-				if err != nil {
-					log.Fatal("Couldn't decode JSON")
-				}
-				fmt.Printf("%s\n", b)
-				switch e.Type {
-				case "gameStart":
-					// load game to bot
-					fmt.Println("adding game")
-				case "gameFinish":
-					// remove game from bot
-					fmt.Println("removing finished game")
-				case "challenge":
-					fmt.Printf("received %s challenge (%s)\n", e.Challenge.Variant.Key, e.Challenge.Id)
-					// add challenge to bot queue
-				case "challengeCanceled", "challengeDeclined":
-					fmt.Printf("cancelled %s challenge (%s)\n", e.Challenge.Variant.Key, e.Challenge.Id)
-					// remove existing challenge in bot
-				}
-				start = i + 1
+				lines <- line
 			}
 		}
 	}
-	fmt.Println("Stopped listening")
 }
